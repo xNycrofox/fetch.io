@@ -6,3 +6,5 @@
 /resources/windows/presets
 /resources/windows/bin
 /resources/mac
+/build
+/dist

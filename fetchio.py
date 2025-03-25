@@ -39,6 +39,12 @@ class FetchioDownloader:
         icon_path = self.find_resource_path("icon.ico")
         if icon_path and os.path.exists(icon_path):
             self.root.iconbitmap(icon_path)
+            # Zusätzlich als Titel-Icon setzen für bessere Sichtbarkeit
+            try:
+                # Für Windows: Setzt das Icon auch in der Taskleiste
+                self.root.iconbitmap(default=icon_path)
+            except:
+                pass
         
         # Für Zeitmessungen
         self.download_start_time = None
@@ -305,6 +311,9 @@ class FetchioDownloader:
         self.quality_combo["values"] = ["highest", "1080p", "720p", "480p", "360p", "240p", "144p"]
         self.quality_combo.pack(side=tk.LEFT)
         
+        # Binde einen Callback an Änderungen der Qualitätsauswahl
+        self.quality_combo.bind("<<ComboboxSelected>>", self.on_quality_change)
+        
         # Ausgabepfad
         path_frame = ttk.Frame(main_frame)
         path_frame.pack(fill=tk.X, pady=(0, 10))
@@ -431,12 +440,12 @@ class FetchioDownloader:
         footer_frame = ttk.Frame(main_frame)
         footer_frame.pack(fill=tk.X, pady=(10, 0))
         
-        # Version links
-        version_label = ttk.Label(footer_frame, text="v1.0.0", font=("Arial", 8))
+        # Version links in Arial 9
+        version_label = ttk.Label(footer_frame, text="v1.0.0", font=("Arial", 9))
         version_label.pack(side=tk.LEFT)
         
-        # Copyright rechts
-        copyright_label = ttk.Label(footer_frame, text="© xNycrofox", font=("Arial", 8))
+        # Copyright rechts in Arial 9
+        copyright_label = ttk.Label(footer_frame, text="© xNycrofox (@github.com/xNycrofox)", font=("Arial", 9))
         copyright_label.pack(side=tk.RIGHT)
         
         # GitHub-Link bei Klick auf Copyright öffnen
@@ -511,7 +520,104 @@ class FetchioDownloader:
         elif format_type == "mp3":
             self.quality_combo["values"] = ["highest", "192kbps", "128kbps", "96kbps", "64kbps"]
             self.quality_var.set("highest")
+        
+        # Aktualisiere die Video-Informationen für die aktuelle Qualitätsauswahl
+        if self.yt:
+            self.update_selected_quality_info()
     
+    def on_quality_change(self, event=None):
+        """Wird aufgerufen, wenn der Benutzer eine andere Qualität auswählt"""
+        # Nur fortfahren, wenn bereits Video-Informationen geladen wurden
+        if not self.yt:
+            return
+            
+        # Video-Informationen für die ausgewählte Qualität aktualisieren
+        self.update_selected_quality_info()
+    
+    def update_selected_quality_info(self):
+        """Aktualisiert die Video-Informationen basierend auf der ausgewählten Qualität"""
+        selected_format = self.format_var.get()
+        selected_quality = self.quality_var.get()
+        
+        # Nur für MP4-Videos relevant
+        if selected_format == "mp4":
+            # Standardwerte
+            size_str = "Unbekannt"
+            best_resolution = self.resolution_var.get()
+            
+            try:
+                if selected_quality == "highest":
+                    # Höchste verfügbare Qualität - bereits angezeigt
+                    if self.available_video_streams:
+                        resolutions = sorted(self.available_video_streams.keys(), 
+                                          key=lambda x: int(x.replace('p', '')), 
+                                          reverse=True)
+                        if resolutions:
+                            highest_res = resolutions[0]
+                            self.resolution_var.set(highest_res)
+                            best_stream = self.available_video_streams[highest_res]
+                            
+                            if hasattr(best_stream, 'filesize'):
+                                size_str = self.format_size(best_stream.filesize)
+                                
+                                # Wenn es sich um einen adaptiven Stream handelt, zeige auch die Audio-Größe an
+                                if not best_stream.is_progressive and self.best_audio_stream:
+                                    size_str += f" + {self.format_size(self.best_audio_stream.filesize)} (Audio)"
+                elif "* (beste)" in selected_quality:
+                    # Adaptive Stream (benötigt Muxing)
+                    # Auflösung aus dem String extrahieren (z.B. "1080p* (beste)" -> "1080p")
+                    resolution = selected_quality.split("*")[0].strip()
+                    
+                    # Stream aus dem Cache holen
+                    if resolution in self.available_video_streams:
+                        self.resolution_var.set(resolution)
+                        stream = self.available_video_streams[resolution]
+                        
+                        if hasattr(stream, 'filesize'):
+                            size_str = self.format_size(stream.filesize)
+                            
+                            # Wenn es sich um einen adaptiven Stream handelt, zeige auch die Audio-Größe an
+                            if not stream.is_progressive and self.best_audio_stream:
+                                size_str += f" + {self.format_size(self.best_audio_stream.filesize)} (Audio)"
+                else:
+                    # Spezifische Qualität (z.B. 1080p, 720p, etc.)
+                    self.resolution_var.set(selected_quality)
+                    
+                    # Suche nach dem entsprechenden Stream
+                    if self.yt:
+                        # Zuerst progressive Streams prüfen (besser für die Anzeige)
+                        stream = self.yt.streams.filter(progressive=True, file_extension="mp4", resolution=selected_quality).first()
+                        
+                        # Wenn kein progressiver Stream gefunden wurde, prüfe adaptive Streams
+                        if not stream:
+                            stream = self.yt.streams.filter(adaptive=True, file_extension="mp4", resolution=selected_quality).first()
+                        
+                        if stream and hasattr(stream, 'filesize'):
+                            size_str = self.format_size(stream.filesize)
+                            
+                            # Wenn es sich um einen adaptiven Stream handelt, zeige auch die Audio-Größe an
+                            if not stream.is_progressive and self.best_audio_stream:
+                                size_str += f" + {self.format_size(self.best_audio_stream.filesize)} (Audio)"
+                
+                # Größe aktualisieren
+                self.size_var.set(size_str)
+                
+            except Exception as e:
+                print(f"Fehler beim Aktualisieren der Qualitätsinformationen: {e}")
+                # Bei Fehler keine Änderung vornehmen
+        
+        elif selected_format == "mp3":
+            # Bei MP3 die Bitrate anzeigen
+            bitrate = "192kbps"  # Standardwert
+            if selected_quality != "highest":
+                bitrate = selected_quality
+            
+            # Finde den besten Audio-Stream
+            if self.yt and self.best_audio_stream and hasattr(self.best_audio_stream, 'filesize'):
+                size_str = self.format_size(self.best_audio_stream.filesize)
+                self.size_var.set(f"{size_str} (vor Konvertierung, {bitrate})")
+            else:
+                self.size_var.set(f"Unbekannt ({bitrate})")
     
     def browse_directory(self):
         """Download-Verzeichnis auswählen"""
@@ -1102,7 +1208,14 @@ class FetchioDownloader:
                 except:
                     pass
                 
-            # FFmpeg-Prozess starten - diesmal mit Popen, aber mit Pipe-Kommunikation optimiert
+            # FFmpeg-Prozess starten - Windows-spezifische Flags zur Verhinderung des Konsolenfensters
+            startupinfo = None
+            if os.name == 'nt':
+                # Importiere subprocess.STARTUPINFO in Windows
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
+
             process = subprocess.Popen(
                 [
                     self.ffmpeg_path,
@@ -1116,6 +1229,7 @@ class FetchioDownloader:
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                startupinfo=startupinfo,  # Windows-spezifisch für verstecktes Fenster
                 bufsize=10**8  # Großer Buffer, um Blockieren zu vermeiden
             )
             
@@ -1202,6 +1316,14 @@ class FetchioDownloader:
                 except:
                     pass
             
+            # Windows-spezifische Flags zur Verhinderung des Konsolenfensters
+            startupinfo = None
+            if os.name == 'nt':
+                # Importiere subprocess.STARTUPINFO in Windows
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
+            
             # FFmpeg-Prozess starten mit optimierter Pipe-Kommunikation
             process = subprocess.Popen(
                 [
@@ -1215,6 +1337,7 @@ class FetchioDownloader:
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                startupinfo=startupinfo,  # Windows-spezifisch für verstecktes Fenster
                 bufsize=10**8  # Großer Buffer, um Blockieren zu vermeiden
             )
             
