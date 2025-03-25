@@ -24,8 +24,8 @@ Ein einfacher, benutzerfreundlicher YouTube-Downloader mit einer modernen Benutz
 2. Klonen Sie das Repository: `git clone https://github.com/xNycrofox/fetch-io.git`
 3. Wechseln Sie in das Verzeichnis: `cd fetch-io`
 4. Installieren Sie die Abhängigkeiten: `pip install -r requirements.txt`
-(Optional) Vorher noch ffmpeg installieren (wird ansonsten automatisch erledigt)
-5. Starten Sie die Anwendung: `python fetchio.py`
+5. (Optional) Vorher noch ffmpeg installieren (wird ansonsten automatisch erledigt)
+6. Starten Sie die Anwendung: `python fetchio.py`
 
 ## Nutzung
 
